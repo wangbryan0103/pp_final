@@ -133,76 +133,80 @@ void SmithWaterman_diag(const std::string &seqA, const std::string &seqB, int &m
 }
 
 
-void SmithWaterman_SIMD(const std::string &seqA, const std::string &seqB, int &max_score, int &max_i, int &max_j, std::vector<std::vector<int>> &simd_score) {
+void SmithWaterman_SIMD(const string &seqA, const string &seqB, int &max_score, int &max_i, int &max_j, vector<vector<int>> &simd_score) {
     int rows = seqA.size() + 1;
     int cols = seqB.size() + 1;
 
     // 初始化用於儲存每個位置分數的矩陣
-    simd_score.assign(rows, std::vector<int>(cols, 0));
+    simd_score.assign(rows, vector<int>(cols, 0));
 
-    // 初始化計算所需的向量
-    std::vector<int> prev(cols, 0);
-    std::vector<int> curr(cols, 0);
+    // 使用對齊分配記憶體
+    int *prev = (int *)_mm_malloc(cols * sizeof(int), 32);
+    int *curr = (int *)_mm_malloc(cols * sizeof(int), 32);
+
+    // 初始化
+    fill(prev, prev + cols, 0);
+    fill(curr, curr + cols, 0);
 
     for (int diag = 2; diag < rows + cols - 1; ++diag) {
-        int start_row = std::max(1, diag - (cols - 1));
-        int end_row = std::min(rows - 1, diag - 1);
+        int start_row = max(1, diag - (cols - 1));
+        int end_row = min(rows - 1, diag - 1);
         int len_diag = end_row - start_row + 1;
 
-        for (int d = 0; d < len_diag; d += 8) { // 每次處理 8 個元素
-            int remaining = std::min(8, len_diag - d);
+        for (int d = 0; d < len_diag; d += 8) {
+            int remaining = min(8, len_diag - d);
 
-            // 準備對角線上的索引
-            int i = start_row + d;
-            int j = diag - i;
-
-            // 加載 seqA 和 seqB 的字元
+            // 設定 SIMD 處理的當前區域
             __m256i seqA_chars = _mm256_set_epi32(
-                seqA[i + 7 - 1], seqA[i + 6 - 1], seqA[i + 5 - 1], seqA[i + 4 - 1],
-                seqA[i + 3 - 1], seqA[i + 2 - 1], seqA[i + 1 - 1], seqA[i - 1]);
+                seqA[start_row + d + 7 - 1], seqA[start_row + d + 6 - 1],
+                seqA[start_row + d + 5 - 1], seqA[start_row + d + 4 - 1],
+                seqA[start_row + d + 3 - 1], seqA[start_row + d + 2 - 1],
+                seqA[start_row + d + 1 - 1], seqA[start_row + d - 1]);
 
             __m256i seqB_chars = _mm256_set_epi32(
-                seqB[j + 7 - 1], seqB[j + 6 - 1], seqB[j + 5 - 1], seqB[j + 4 - 1],
-                seqB[j + 3 - 1], seqB[j + 2 - 1], seqB[j + 1 - 1], seqB[j - 1]);
+                seqB[diag - start_row - d - 7 - 1], seqB[diag - start_row - d - 6 - 1],
+                seqB[diag - start_row - d - 5 - 1], seqB[diag - start_row - d - 4 - 1],
+                seqB[diag - start_row - d - 3 - 1], seqB[diag - start_row - d - 2 - 1],
+                seqB[diag - start_row - d - 1 - 1], seqB[diag - start_row - d - 1]);
 
-            // 比較字元是否匹配
+            // 計算匹配分數
             __m256i match_mask = _mm256_cmpeq_epi32(seqA_chars, seqB_chars);
             __m256i mismatch_score_vec = _mm256_blendv_epi8(_mm256_set1_epi32(GAP_SCORE), _mm256_set1_epi32(MATCH_SCORE), match_mask);
 
-            // 加載左上角、上方和左方的分數
-            __m256i diag_scores = _mm256_loadu_si256((__m256i *)&prev[j - 1]);
-            __m256i up_scores = _mm256_loadu_si256((__m256i *)&prev[j]);
-            __m256i left_scores = _mm256_loadu_si256((__m256i *)&curr[j - 1]);
+            // 加載之前的分數
+            __m256i diag_scores = _mm256_loadu_si256((__m256i *)&prev[d]);
+            __m256i up_scores = _mm256_loadu_si256((__m256i *)&prev[d + 1]);
+            __m256i left_scores = _mm256_loadu_si256((__m256i *)&curr[d]);
 
-            // 計算三個方向的分數
-            __m256i score_diag = _mm256_add_epi32(diag_scores, mismatch_score_vec);
-            __m256i score_up = _mm256_add_epi32(up_scores, _mm256_set1_epi32(GAP_SCORE));
-            __m256i score_left = _mm256_add_epi32(left_scores, _mm256_set1_epi32(GAP_SCORE));
-
-            // 計算當前最大分數
-            __m256i current_scores = _mm256_max_epi32(score_diag, _mm256_max_epi32(score_up, score_left));
+            // 計算當前分數
+            __m256i current_scores = _mm256_add_epi32(diag_scores, mismatch_score_vec);
+            current_scores = _mm256_max_epi32(current_scores, _mm256_max_epi32(up_scores, left_scores));
             current_scores = _mm256_max_epi32(current_scores, _mm256_setzero_si256());
 
-            // 存儲當前分數到 curr
-            _mm256_storeu_si256((__m256i *)&curr[j], current_scores);
+            // 儲存當前分數
+            _mm256_storeu_si256((__m256i *)&curr[d], current_scores);
 
-            // 更新 simd_score 矩陣並記錄最大分數
+            // 更新矩陣並更新最大分數
             for (int k = 0; k < remaining; ++k) {
-                int scalar_score = curr[j + k];
-                simd_score[i + k][j + k] = scalar_score;
+                int scalar_score = curr[d + k];
+                simd_score[start_row + d + k][diag - start_row - d - k] = scalar_score;
 
                 if (scalar_score > max_score) {
                     max_score = scalar_score;
-                    max_i = i + k;
-                    max_j = j + k;
+                    max_i = start_row + d + k;
+                    max_j = diag - start_row - d - k;
                 }
             }
         }
 
-        // 更新波前數據
-        prev.swap(curr);
-        std::fill(curr.begin(), curr.end(), 0);
+        // 更新行緩衝區
+        swap(prev, curr);
+        fill(curr, curr + cols, 0);
     }
+
+    // 正確釋放內存
+    _mm_free(prev);
+    _mm_free(curr);
 }
 
 
@@ -305,28 +309,26 @@ int main(int argc, char **argv) {
 
     
     // Accuracy test of diag
-    bool score_test = ans_accuracy(max_score_serial, max_score_diag, max_i_serial, max_i_diag, max_j_serial, max_j_diag);
-    if (score_test == true)
-        cout << "| diag score_test passed |" << endl << endl;
+    if (ans_accuracy(max_score_serial, max_score_diag, max_i_serial, max_i_diag, max_j_serial, max_j_diag))
+        cout << "| diag score_test passed |" << endl;
     else
-        cout << "| diag score_test failed |" << endl << endl;
+        cout << "| diag score_test failed |" << endl;
     
     // Accuracy test of SIMD
-    score_test = ans_accuracy(max_score_serial, max_score_simd, max_i_serial, max_i_simd, max_j_serial, max_j_simd);
-    if (score_test == true)
+    if (ans_accuracy(max_score_serial, max_score_simd, max_i_serial, max_i_simd, max_j_serial, max_j_simd))
         cout << "| SIMD score_test passed |" << endl << endl;
     else
         cout << "| SIMD score_test failed |" << endl << endl;
 
     // Output max scores and execution times
     cout << "Serial Score   : " << max_score_serial << " at (" << max_i_serial << ", " << max_j_serial << ")" << endl;
-    cout << "Diagonal Score : " << max_score_diag << " at (" << max_i_diag << ", " << max_j_diag << ")" << endl << endl;
+    cout << "Diagonal Score : " << max_score_diag << " at (" << max_i_diag << ", " << max_j_diag << ")" << endl;
     cout << "SIMD Score : " << max_score_simd << " at (" << max_i_simd << ", " << max_j_simd << ")" << endl << endl;
 
     cout << "==========  serial  ==========" << endl;
     cout << "time: " << duration_serial.count() << " ns" << endl;
     cout << "========== Diagonal ==========" << endl;
-    cout << "time: " << duration_diag.count() << " ns" << endl << endl;
+    cout << "time: " << duration_diag.count() << " ns" << endl;
     cout << "==========   SIMD   ==========" << endl;
     cout << "time: " << duration_simd.count() << " ns" << endl << endl;
 
