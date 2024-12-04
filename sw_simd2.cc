@@ -132,7 +132,7 @@ void SmithWaterman_diag(const std::string &seqA, const std::string &seqB, int &m
     }
 }
 
-
+// 2. string reverse seqA, rev to copy 1 times (load) , speedup
 void SmithWaterman_SIMD(const string &seqA, const string &seqB, int &max_score, int &max_i, int &max_j, vector<vector<int>> &simd_score) {
     int rows = seqA.size() + 1;
     int cols = seqB.size() + 1;
@@ -141,14 +141,35 @@ void SmithWaterman_SIMD(const string &seqA, const string &seqB, int &max_score, 
     simd_score.assign(rows, vector<int>(cols, 0));
 
     // 使用對齊分配記憶體
-    int *prev = (int *)_mm_malloc(cols * sizeof(int), 32);
-    int *curr = (int *)_mm_malloc(cols * sizeof(int), 32);
+    int *prev2 = (int *)_mm_malloc(cols * sizeof(int), 32); // 第2層的緩衝區
+    int *prev1 = (int *)_mm_malloc(cols * sizeof(int), 32); // 第1層的緩衝區
+    int *prev1l = (int *)_mm_malloc(cols * sizeof(int), 32); // 
+    int *curr = (int *)_mm_malloc(cols * sizeof(int), 32);  // 當前的計算結果
 
-    // 初始化
-    fill(prev, prev + cols, 0);
+    // 初始化緩衝區
+    fill(prev2, prev2 + cols, 0);
+    fill(prev1, prev1 + cols, 0);
+    fill(prev1l, prev1l + cols, 0);
     fill(curr, curr + cols, 0);
 
     for (int diag = 2; diag < rows + cols - 1; ++diag) {
+        // 調整 prev2 的索引對齊
+        if (diag <= rows){
+            for (int k = cols - 1; k > 0; --k) {
+                prev2[k] = prev2[k - 1];
+                prev1[k] = prev1[k - 1];
+            }
+            prev2[0] = 0; // 第一個位置填充 0
+            prev1[0] = 0;
+        }
+        // else{
+        //     for (int k = 0 ; k < col-1; ++k) {
+        //         prev2[k] = prev2[k + 1];
+        //         prev1[k] = prev1[k + 1];
+        //     }
+        //     prev2[col-1] = 0; // 第一個位置填充 0
+        //     prev1[col-1] = 0;
+        // }
         int start_row = max(1, diag - (cols - 1));
         int end_row = min(rows - 1, diag - 1);
         int len_diag = end_row - start_row + 1;
@@ -156,7 +177,7 @@ void SmithWaterman_SIMD(const string &seqA, const string &seqB, int &max_score, 
         for (int d = 0; d < len_diag; d += 8) {
             int remaining = min(8, len_diag - d);
 
-            // 設定 SIMD 處理的當前區域
+            // 加載當前處理的序列區域
             __m256i seqA_chars = _mm256_set_epi32(
                 seqA[start_row + d + 7 - 1], seqA[start_row + d + 6 - 1],
                 seqA[start_row + d + 5 - 1], seqA[start_row + d + 4 - 1],
@@ -169,24 +190,68 @@ void SmithWaterman_SIMD(const string &seqA, const string &seqB, int &max_score, 
                 seqB[diag - start_row - d - 3 - 1], seqB[diag - start_row - d - 2 - 1],
                 seqB[diag - start_row - d - 1 - 1], seqB[diag - start_row - d - 1]);
 
-            // 計算匹配分數
+            // 打印抓取到的序列和匹配分數
+            cout << "Diag: " << diag << ", Offset: " << d << endl;
+            for (int k = 0; k < remaining; ++k) {
+                int i = start_row + d + k;
+                int j = diag - i;
+
+                if (i > seqA.size() || j > seqB.size()) {
+                    continue; // 跳過不合法的索引
+                }
+
+                int match_score = (seqA[i - 1] == seqB[j - 1]) ? MATCH_SCORE : GAP_SCORE;
+                cout << "seqA[" << i - 1 << "] = " << seqA[i - 1]
+                     << ", seqB[" << j - 1 << "] = " << seqB[j - 1]
+                     << ", match_score = " << match_score << endl;
+            }
+
+            // 計算 match_mask
             __m256i match_mask = _mm256_cmpeq_epi32(seqA_chars, seqB_chars);
-            __m256i mismatch_score_vec = _mm256_blendv_epi8(_mm256_set1_epi32(GAP_SCORE), _mm256_set1_epi32(MATCH_SCORE), match_mask);
+
+            __m256i match_scores = _mm256_blendv_epi8(
+                _mm256_set1_epi32(GAP_SCORE), 
+                _mm256_set1_epi32(MATCH_SCORE), 
+                match_mask
+            );
 
             // 加載之前的分數
-            __m256i diag_scores = _mm256_loadu_si256((__m256i *)&prev[d]);
-            __m256i up_scores = _mm256_loadu_si256((__m256i *)&prev[d + 1]);
-            __m256i left_scores = _mm256_loadu_si256((__m256i *)&curr[d]);
+            __m256i diag_scores = _mm256_add_epi32(_mm256_loadu_si256((__m256i *)&prev2[d+1]), match_scores);
+            __m256i up_scores = _mm256_add_epi32(_mm256_loadu_si256((__m256i *)&prev1[d + 1]), _mm256_set1_epi32(GAP_SCORE));
+            __m256i left_scores = _mm256_add_epi32(_mm256_loadu_si256((__m256i *)&prev1l[d]), _mm256_set1_epi32(GAP_SCORE));
+
+            int diag_values[8], up_values[8], left_values[8];
+            _mm256_storeu_si256((__m256i *)diag_values, diag_scores);
+            _mm256_storeu_si256((__m256i *)up_values, up_scores);
+            _mm256_storeu_si256((__m256i *)left_values, left_scores);
+
+            cout << "Diag Scores: ";
+            for (int k = 0; k < 8; ++k) cout << diag_values[k] << " ";
+            cout << endl;
+
+            cout << "Up Scores: ";
+            for (int k = 0; k < 8; ++k) cout << up_values[k] << " ";
+            cout << endl;
+
+            cout << "Left Scores: ";
+            for (int k = 0; k < 8; ++k) cout << left_values[k] << " ";
+            cout << endl;
 
             // 計算當前分數
-            __m256i current_scores = _mm256_add_epi32(diag_scores, mismatch_score_vec);
-            current_scores = _mm256_max_epi32(current_scores, _mm256_max_epi32(up_scores, left_scores));
+            __m256i current_scores = _mm256_max_epi32(diag_scores, _mm256_max_epi32(up_scores, left_scores));
             current_scores = _mm256_max_epi32(current_scores, _mm256_setzero_si256());
 
-            // 儲存當前分數
+            // 儲存當前分數到緩衝區
             _mm256_storeu_si256((__m256i *)&curr[d], current_scores);
+            int simd_values[8];
+            _mm256_storeu_si256((__m256i *)simd_values, current_scores);
+            cout << "SIMD Scores (Diag " << diag << ", Offset " << d << "): ";
+            for (int k = 0; k < 8; ++k) {
+                cout << simd_values[k] << " ";
+            }
+            cout << endl;
 
-            // 更新矩陣並更新最大分數
+            // 更新矩陣並檢查最大分數
             for (int k = 0; k < remaining; ++k) {
                 int scalar_score = curr[d + k];
                 simd_score[start_row + d + k][diag - start_row - d - k] = scalar_score;
@@ -199,15 +264,46 @@ void SmithWaterman_SIMD(const string &seqA, const string &seqB, int &max_score, 
             }
         }
 
-        // 更新行緩衝區
-        swap(prev, curr);
-        fill(curr, curr + cols, 0);
+        cout << "Prev2: ";
+        for (int k = 0; k < cols; ++k) {
+            cout << prev2[k] << " ";
+        }
+        cout << endl;
+
+        cout << "Prev1: ";
+        for (int k = 0; k < cols; ++k) {
+            cout << prev1[k] << " ";
+        }
+        cout << endl;
+        
+        cout << "Prev1l: ";
+        for (int k = 0; k < cols; ++k) {
+            cout << prev1[k] << " ";
+        }
+        cout << endl;
+
+        // 更新前的數值打印
+        cout << "Curr Scores: ";
+        for (int k = 0; k < 8; ++k) cout << curr[k] << " ";
+        cout << endl;
+
+        // 更新波前數據
+        int *temp = prev2;
+        prev2 = prev1;
+        prev1 = curr;
+        prev1l = curr;
+        curr = temp;
+
+        fill(curr, curr + cols, 0); // 重置當前緩衝區
     }
 
     // 正確釋放內存
-    _mm_free(prev);
+    _mm_free(prev2);
+    _mm_free(prev1);
+    // _mm_free(prev1l);
     _mm_free(curr);
 }
+
 
 
 
@@ -224,6 +320,8 @@ int main(int argc, char **argv) {
     double similarity = 0.7;
     generate_random_seq(seqA, length);
     generate_similar_seq(seqA, seqB, length, similarity);
+    // seqA = "GTGCCGCCGG";
+    // seqB = "GTGCCGCCGG";
 
     cout << "Sequence A: " << seqA << endl;
     cout << "Sequence B: " << seqB << endl;
@@ -267,7 +365,7 @@ int main(int argc, char **argv) {
 
     // Print serial table
     cout << "\nSerial Score Table:" << endl;
-    cout << "    ";
+    cout << "      ";
     for (char c : seqB) cout << setw(4) << c;
     cout << endl;
     for (size_t i = 0; i <= seqA.size(); ++i) {
@@ -281,7 +379,7 @@ int main(int argc, char **argv) {
 
     // Print diagonal table
     cout << "\nDiagonal Calculation Table:" << endl;
-    cout << "    ";
+    cout << "      ";
     for (char c : seqB) cout << setw(4) << c;
     cout << endl;
     for (size_t i = 0; i <= seqA.size(); ++i) {
@@ -295,7 +393,7 @@ int main(int argc, char **argv) {
 
     // Print SIMD table
     cout << "\nSIMD Score Table:" << endl;
-    cout << "    ";
+    cout << "      ";
     for (char c : seqB) cout << setw(4) << c;
     cout << endl;
     for (size_t i = 0; i <= seqA.size(); ++i) {
