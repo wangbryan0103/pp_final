@@ -117,7 +117,7 @@ void SmithWaterman_diag(const std::string &seqA, const std::string &seqB, int &m
             }
 
             // 儲存分數到 diag_score
-            diag_score[i][j] = curr[j];
+            // diag_score[i][j] = curr[j];
 
             if (curr[j] > max_score) {
                 max_score = curr[j];
@@ -158,9 +158,6 @@ void SmithWaterman_SIMD(const string &seqA, const string &seqB, int &max_score, 
     for (size_t i = 0; i < seqB.size(); ++i) {
         seqB_buffer[i] = seqB[seqB.size() - 1 - i];
     }
-    for (int i = 0; i < 7; i++){
-        seqB_buffer[cols+i-1] = '_';
-    }
 
     for (int diag = 2; diag < rows + cols - 1; ++diag) {
         int start_row = max(1, diag - (cols - 1));
@@ -179,44 +176,44 @@ void SmithWaterman_SIMD(const string &seqA, const string &seqB, int &max_score, 
             __m256i seqB_chars = _mm256_loadu_si256((__m256i *)seqB_ptr);
 
             // 打印抓取的內容
-            cout << "Diag: " << diag << ", Offset: " << d << endl;
+            // cout << "Diag: " << diag << ", Offset: " << d << endl;
 
-            char seqA_extracted[8];
-            char seqB_extracted[8];
-            _mm256_storeu_si256((__m256i *)seqA_extracted, seqA_chars);
-            _mm256_storeu_si256((__m256i *)seqB_extracted, seqB_chars);
+            // char seqA_extracted[8];
+            // char seqB_extracted[8];
+            // _mm256_storeu_si256((__m256i *)seqA_extracted, seqA_chars);
+            // _mm256_storeu_si256((__m256i *)seqB_extracted, seqB_chars);
 
-            cout << "Loaded seqA: ";
-            for (int k = 0; k < remaining; ++k) {
-                cout << seqA_extracted[k] << " ";
-            }
-            cout << endl;
+            // cout << "Loaded seqA: ";
+            // for (int k = 0; k < remaining; ++k) {
+            //     cout << seqA_extracted[k] << " ";
+            // }
+            // cout << endl;
 
-            cout << "Loaded seqB: ";
-            for (int k = 0; k < remaining; ++k) {
-                cout << seqB_extracted[k] << " ";
-            }
-            cout << endl;
+            // cout << "Loaded seqB: ";
+            // for (int k = 0; k < remaining; ++k) {
+            //     cout << seqB_extracted[k] << " ";
+            // }
+            // cout << endl;
 
             // 計算 match_mask
             __m256i match_mask = _mm256_cmpeq_epi8(seqA_chars, seqB_chars);
 
             // 打印 match_mask 的內容
-            unsigned char mask_extracted[8];
-            _mm256_storeu_si256((__m256i *)mask_extracted, match_mask);
+            // unsigned char mask_extracted[8];
+            // _mm256_storeu_si256((__m256i *)mask_extracted, match_mask);
 
-            cout << "Match Mask: ";
-            for (int k = 0; k < 8; ++k) {
-                cout << (mask_extracted[k] ? "1" : "0") << " "; // 1 表示匹配，0 表示不匹配
-            }
-            cout << endl;
+            // cout << "Match Mask: ";
+            // for (int k = 0; k < 8; ++k) {
+            //     cout << (mask_extracted[k] ? "1" : "0") << " "; // 1 表示匹配，0 表示不匹配
+            // }
+            // cout << endl;
 
-            cout << "Match Comparisons: "<< endl;
-            for (int k = 0; k < 8; ++k) {
-                cout << "seqA[" << k << "] = " << seqA_extracted[k]
-                    << ", seqB[" << k << "] = " << seqB_extracted[k]
-                    << ", Match: " << ((mask_extracted[k] != 0) ? "Yes" : "No") << endl;
-            }
+            // cout << "Match Comparisons: "<< endl;
+            // for (int k = 0; k < 8; ++k) {
+            //     cout << "seqA[" << k << "] = " << seqA_extracted[k]
+            //         << ", seqB[" << k << "] = " << seqB_extracted[k]
+            //         << ", Match: " << ((mask_extracted[k] != 0) ? "Yes" : "No") << endl;
+            // }
 
             // 將 8 位元的 match_mask 擴展為 32 位元
             __m256i extended_mask = _mm256_cvtepi8_epi32(_mm256_castsi256_si128(match_mask));
@@ -239,28 +236,28 @@ void SmithWaterman_SIMD(const string &seqA, const string &seqB, int &max_score, 
             __m256i left_scores = _mm256_add_epi32(
                 _mm256_loadu_si256((__m256i *)&prev1[d + disp]), _mm256_set1_epi32(GAP_SCORE));
 
-            int diag_values[cols + 1], up_values[cols + 1], left_values[cols + 1];
-            int match_values[cols + 1];
-            _mm256_storeu_si256((__m256i *)match_values, match_scores);
-            _mm256_storeu_si256((__m256i *)diag_values, diag_scores);
-            _mm256_storeu_si256((__m256i *)up_values, up_scores);
-            _mm256_storeu_si256((__m256i *)left_values, left_scores);
+            // int diag_values[cols + 1], up_values[cols + 1], left_values[cols + 1];
+            // int match_values[cols + 1];
+            // _mm256_storeu_si256((__m256i *)match_values, match_scores);
+            // _mm256_storeu_si256((__m256i *)diag_values, diag_scores);
+            // _mm256_storeu_si256((__m256i *)up_values, up_scores);
+            // _mm256_storeu_si256((__m256i *)left_values, left_scores);
 
-            cout << "Match Scores: ";
-            for (int k = 0; k < 8; ++k) cout << match_values[k] << " ";
-            cout << endl;
+            // cout << "Match Scores: ";
+            // for (int k = 0; k < 8; ++k) cout << match_values[k] << " ";
+            // cout << endl;
 
-            cout << "Diag Scores: ";
-            for (int k = 0; k < 8; ++k) cout << diag_values[k] << " ";
-            cout << endl;
+            // cout << "Diag Scores: ";
+            // for (int k = 0; k < 8; ++k) cout << diag_values[k] << " ";
+            // cout << endl;
 
-            cout << "Up Scores: ";
-            for (int k = 0; k < 8; ++k) cout << up_values[k] << " ";
-            cout << endl;
+            // cout << "Up Scores: ";
+            // for (int k = 0; k < 8; ++k) cout << up_values[k] << " ";
+            // cout << endl;
 
-            cout << "Left Scores: ";
-            for (int k = 0; k < 8; ++k) cout << left_values[k] << " ";
-            cout << endl;
+            // cout << "Left Scores: ";
+            // for (int k = 0; k < 8; ++k) cout << left_values[k] << " ";
+            // cout << endl;
 
             // 計算當前分數
             __m256i current_scores = _mm256_max_epi32(diag_scores, _mm256_max_epi32(up_scores, left_scores));
@@ -272,7 +269,7 @@ void SmithWaterman_SIMD(const string &seqA, const string &seqB, int &max_score, 
             // 更新矩陣並檢查最大分數
             for (int k = 0; k < remaining; ++k) {
                 int scalar_score = curr[d + k+1];
-                simd_score[start_row + d + k][diag - start_row - d - k] = scalar_score;
+                // simd_score[start_row + d + k][diag - start_row - d - k] = scalar_score;
 
                 if (scalar_score > max_score) {
                     max_score = scalar_score;
@@ -282,21 +279,21 @@ void SmithWaterman_SIMD(const string &seqA, const string &seqB, int &max_score, 
             }
         }
 
-        cout << "Prev2: ";
-        for (int k = 0; k < cols + 1; ++k) {
-            cout << prev2[k] << " ";
-        }
-        cout << endl;
+        // cout << "Prev2: ";
+        // for (int k = 0; k < cols + 1; ++k) {
+        //     cout << prev2[k] << " ";
+        // }
+        // cout << endl;
 
-        cout << "Prev1: ";
-        for (int k = 0; k < cols + 1; ++k) {
-            cout << prev1[k] << " ";
-        }
-        cout << endl;
+        // cout << "Prev1: ";
+        // for (int k = 0; k < cols + 1; ++k) {
+        //     cout << prev1[k] << " ";
+        // }
+        // cout << endl;
 
-        cout << "Curr Scores: ";
-        for (int k = 0; k < cols + 1; ++k) cout << curr[k] << " ";
-        cout << endl;
+        // cout << "Curr Scores: ";
+        // for (int k = 0; k < cols + 1; ++k) cout << curr[k] << " ";
+        // cout << endl;
 
         // 更新波前數據
         int *temp = prev2;
@@ -325,15 +322,15 @@ int main(int argc, char **argv) {
     string seqB; // = "GATAGCAT";
 
 
-    int length = 10;
+    int length = 10000;
     double similarity = 0.7;
     generate_random_seq(seqA, length);
     generate_similar_seq(seqA, seqB, length, similarity);
     // seqA = "ATTGTGTCGC";
     // seqB = "TTTGTGTCGC";
 
-    cout << "Sequence A: " << seqA << endl;
-    cout << "Sequence B: " << seqB << endl;
+    // cout << "Sequence A: " << seqA << endl;
+    // cout << "Sequence B: " << seqB << endl;
 
     //  =====================================================
     //  parallel version of wavefront with two anti-diagonals
@@ -373,46 +370,46 @@ int main(int argc, char **argv) {
 
 
     // Print serial table
-    cout << "\nSerial Score Table:" << endl;
-    cout << "      ";
-    for (char c : seqB) cout << setw(4) << c;
-    cout << endl;
-    for (size_t i = 0; i <= seqA.size(); ++i) {
-        if (i > 0) cout << seqA[i - 1] << " ";
-        else cout << "  ";
-        for (size_t j = 0; j <= seqB.size(); ++j) {
-            cout << setw(4) << serial_score[i][j];
-        }
-        cout << endl;
-    }
+    // cout << "\nSerial Score Table:" << endl;
+    // cout << "      ";
+    // for (char c : seqB) cout << setw(4) << c;
+    // cout << endl;
+    // for (size_t i = 0; i <= seqA.size(); ++i) {
+    //     if (i > 0) cout << seqA[i - 1] << " ";
+    //     else cout << "  ";
+    //     for (size_t j = 0; j <= seqB.size(); ++j) {
+    //         cout << setw(4) << serial_score[i][j];
+    //     }
+    //     cout << endl;
+    // }
 
-    // Print diagonal table
-    cout << "\nDiagonal Calculation Table:" << endl;
-    cout << "      ";
-    for (char c : seqB) cout << setw(4) << c;
-    cout << endl;
-    for (size_t i = 0; i <= seqA.size(); ++i) {
-        if (i > 0) cout << seqA[i - 1] << " ";
-        else cout << "  ";
-        for (size_t j = 0; j <= seqB.size(); ++j) {
-            cout << setw(4) << diag_score[i][j];
-        }
-        cout << endl;
-    }
+    // // Print diagonal table
+    // cout << "\nDiagonal Calculation Table:" << endl;
+    // cout << "      ";
+    // for (char c : seqB) cout << setw(4) << c;
+    // cout << endl;
+    // for (size_t i = 0; i <= seqA.size(); ++i) {
+    //     if (i > 0) cout << seqA[i - 1] << " ";
+    //     else cout << "  ";
+    //     for (size_t j = 0; j <= seqB.size(); ++j) {
+    //         cout << setw(4) << diag_score[i][j];
+    //     }
+    //     cout << endl;
+    // }
 
-    // Print SIMD table
-    cout << "\nSIMD Score Table:" << endl;
-    cout << "      ";
-    for (char c : seqB) cout << setw(4) << c;
-    cout << endl;
-    for (size_t i = 0; i <= seqA.size(); ++i) {
-        if (i > 0) cout << seqA[i - 1] << " ";
-        else cout << "  ";
-        for (size_t j = 0; j <= seqB.size(); ++j) {
-            cout << setw(4) << simd_score[i][j];
-        }
-        cout << endl;
-    }
+    // // Print SIMD table
+    // cout << "\nSIMD Score Table:" << endl;
+    // cout << "      ";
+    // for (char c : seqB) cout << setw(4) << c;
+    // cout << endl;
+    // for (size_t i = 0; i <= seqA.size(); ++i) {
+    //     if (i > 0) cout << seqA[i - 1] << " ";
+    //     else cout << "  ";
+    //     for (size_t j = 0; j <= seqB.size(); ++j) {
+    //         cout << setw(4) << simd_score[i][j];
+    //     }
+    //     cout << endl;
+    // }
 
     
     // Accuracy test of diag
