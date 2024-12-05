@@ -196,19 +196,13 @@ void SmithWaterman_SIMD(const string &seqA, const string &seqB, int &max_score, 
                 match_mask
             );
 
-            int disp = 0, diagDisp = 0;
-            if (diag > cols){
-                disp = 1;
-                if(diag == cols+1){
-                    diagDisp = 1;
-                }
-                else{
-                    diagDisp = 2;
-                }
-            }
+            // 動態偏移量計算
+            int disp = min(1, max(0, diag - cols));
+            int diagDisp = min(2, max(0, diag - cols));
+            
             // 動態計算分數
             __m256i diag_scores = _mm256_add_epi32(
-                _mm256_loadu_si256((__m256i *)&prev2[1 + d - 1 + diagDisp]), match_scores);
+                _mm256_loadu_si256((__m256i *)&prev2[d + diagDisp]), match_scores);
             __m256i up_scores = _mm256_add_epi32(
                 _mm256_loadu_si256((__m256i *)&prev1[d + 1 + disp]), _mm256_set1_epi32(GAP_SCORE));
             __m256i left_scores = _mm256_add_epi32(
@@ -273,7 +267,7 @@ void SmithWaterman_SIMD(const string &seqA, const string &seqB, int &max_score, 
         prev1 = curr;
         curr = temp;
 
-        fill(curr, curr + cols +8, 0); // 重置當前緩衝區
+        fill(curr, curr + cols +1, 0); // 重置當前緩衝區
     }
 
     // 正確釋放內存
