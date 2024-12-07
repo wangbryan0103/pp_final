@@ -13,6 +13,7 @@
 #include <cstring>
 
 #define MATCH_SCORE 5
+#define MISMATCH_SCORE -3
 #define GAP_SCORE -7
 #define BEFORE_MAX 0
 #define NEXT_MAX 1
@@ -57,23 +58,20 @@ bool ans_accuracy(int &score_s, int &score_w, int &i_s, int &i_w, int &j_s, int 
 
 
 
-void SmithWaterman_serial(std::vector<std::vector<int>> &score, const std::string &seqA, const std::string &seqB,
+void SmithWaterman_serial(vector<vector<int>> &score, const string &seqA, const string &seqB,
                           int &max_score_serial, int &max_i_serial, int &max_j_serial) {
     int rows = seqA.size() + 1;
     int cols = seqB.size() + 1;
 
     for (int i = 1; i < rows; ++i) {
         for (int j = 1; j < cols; ++j) {
-            int match_score = (seqA[i - 1] == seqB[j - 1]) ? MATCH_SCORE : GAP_SCORE;
+            int diag_score = (seqA[i - 1] == seqB[j - 1]) ? MATCH_SCORE : MISMATCH_SCORE;
+                diag_score = score[i - 1][j - 1] + diag_score;
 
-            
-            int diag_score = score[i - 1][j - 1] + match_score;
-            int up_score = score[i - 1][j] + GAP_SCORE;
+            int up_score   = score[i - 1][j] + GAP_SCORE;
             int left_score = score[i][j - 1] + GAP_SCORE;
-
             
-            score[i][j] = std::max({diag_score, up_score, left_score, 0});
-
+            score[i][j] = max({diag_score, up_score, left_score, 0});
             
             if (score[i][j] > max_score_serial) {
                 max_score_serial = score[i][j];
@@ -85,21 +83,20 @@ void SmithWaterman_serial(std::vector<std::vector<int>> &score, const std::strin
 }
 
 
-void SmithWaterman_diag(const std::string &seqA, const std::string &seqB, int &max_score, int &max_i, int &max_j) {
+void SmithWaterman_diag(const string &seqA, const string &seqB, int &max_score, int &max_i, int &max_j) {
     int rows = seqA.size() + 1;
     int cols = seqB.size() + 1;
 
 
-    // 初始化計算所需的向量
-    std::vector<int> prev1(cols, 0);
-    std::vector<int> prev2(cols, 0);
-    std::vector<int> curr(cols, 0);
-
-
+    
+    vector<int> prev1(cols, 0);
+    vector<int> prev2(cols, 0);
+    
     for (int diag = 2; diag < rows + cols - 1; ++diag) {
-        int start_row = std::max(1, diag - (cols - 1));
-        int end_row = std::min(rows - 1, diag - 1);
-        int len_diag = end_row - start_row + 1;
+        vector<int> curr(cols, 0);    
+        int start_row = max(1, diag - (cols - 1));
+        int end_row   = min(rows - 1, diag - 1);
+        int len_diag  = end_row - start_row + 1;
 
         for (int d = 0; d < len_diag; ++d) {
             int i = start_row + d;
@@ -108,16 +105,13 @@ void SmithWaterman_diag(const std::string &seqA, const std::string &seqB, int &m
             if (i == 0 || j == 0) {
                 curr[j] = 0;
             } else {
-                int mismatch_score = (seqA[i - 1] == seqB[j - 1]) ? MATCH_SCORE : GAP_SCORE;
-                int diag_score = prev1[j - 1] + mismatch_score;
+                int diag_score = (seqA[i - 1] == seqB[j - 1]) ? MATCH_SCORE : MISMATCH_SCORE;
+                    diag_score = prev1[j - 1] + diag_score;
                 int up_score = prev2[j] + GAP_SCORE;
                 int left_score = prev2[j - 1] + GAP_SCORE;
 
-                curr[j] = std::max({diag_score, up_score, left_score, 0});
+                curr[j] = max({diag_score, up_score, left_score, 0});
             }
-
-            // 儲存分數到 diag_score
-            // diag_score[i][j] = curr[j];
 
             if (curr[j] > max_score) {
                 max_score = curr[j];
@@ -126,10 +120,9 @@ void SmithWaterman_diag(const std::string &seqA, const std::string &seqB, int &m
             }
         }
 
-        // 更新波前數據
         prev1.swap(prev2);
         prev2.swap(curr);
-        std::fill(curr.begin(), curr.end(), 0);
+        fill(curr.begin(), curr.end(), 0);
     }
 }
 
@@ -138,101 +131,72 @@ void SmithWaterman_SIMD(const string &seqA, const string &seqB, int &max_score, 
     int rows = seqA.size() + 1;
     int cols = seqB.size() + 1;
 
-    // 使用對齊分配記憶體，額外分配空間處理動態偏移
     int *prev2 = (int *)_mm_malloc((cols + 1) * sizeof(int), 32); 
     int *prev1 = (int *)_mm_malloc((cols + 1) * sizeof(int), 32); 
     int *curr = (int *) _mm_malloc((cols + 1) * sizeof(int), 32); 
 
-    // 初始化緩衝區
-    fill(prev2, prev2 + cols + 1, 0);
-    fill(prev1, prev1 + cols + 1, 0);
-    fill(curr, curr + cols + 1, 0);
-
     char * seqA_buffer = static_cast<char *>(aligned_alloc(ALIGNMENT, rows + 7));
     char * seqB_buffer = static_cast<char *>(aligned_alloc(ALIGNMENT, cols + 7));
 
-    std::memcpy(seqA_buffer + 7, seqA.c_str(), rows);
-    std::memcpy(seqB_buffer, seqB.c_str(), cols);
+    memcpy(seqA_buffer + 7, seqA.c_str(), rows);
+    memcpy(seqB_buffer, seqB.c_str(), cols);
 
     __m256i match_score    = _mm256_set1_epi32(MATCH_SCORE);
-    __m256i mismatch_score = _mm256_set1_epi32(GAP_SCORE);
+    __m256i mismatch_score = _mm256_set1_epi32(MISMATCH_SCORE);
     __m256i gap_score      = _mm256_set1_epi32(GAP_SCORE);
 
-
-
     for (int diag = 2; diag < rows + cols - 1; ++diag) {
+        
         int start_row = max(1, diag - (cols - 1));
         int end_row = min(rows - 1, diag - 1);
         int len_diag = end_row - start_row + 1;
 
-        // 動態偏移量計算
         int disp = min(1, max(0, diag - cols));
         int diagDisp = min(2, max(0, diag - cols));
 
+        for (int d = 0; d < len_diag; d += 8) {
+            int remain = min(8, len_diag - d);
 
-        // #pragma omp parallel
-        // {
-        //     int local_max = 0;
-        //     int local_i;
-        //     int local_j;
+            int indexA = start_row - 1 + 7 + d;
+            int indexB = cols - 1 - end_row + d;
 
-                for (int d = 0; d < len_diag; d += 8) {
-                    int remain = min(8, len_diag - d);
+            __m256i seqA_chars = _mm256_loadu_si256((__m256i *)&seqA_buffer[indexA]);
+            __m256i seqB_chars = _mm256_loadu_si256((__m256i *)&seqB_buffer[indexB]);
 
-                    int indexA = start_row - 1 + 7 + d;
-                    int indexB = cols - 1 - end_row + d;
+            __m256i match_mask = _mm256_cmpeq_epi8(seqA_chars, seqB_chars);
+                    match_mask = _mm256_cvtepi8_epi32(_mm256_castsi256_si128(match_mask));
 
-                    __m256i seqA_chars = _mm256_loadu_si256((__m256i *)&seqA_buffer[indexA]);
-                    __m256i seqB_chars = _mm256_loadu_si256((__m256i *)&seqB_buffer[indexB]);
+            __m256i diag_score = _mm256_or_si256( _mm256_and_si256(match_mask , match_score),  
+                                                    _mm256_andnot_si256(match_mask , mismatch_score) );
 
-                    __m256i match_mask = _mm256_cmpeq_epi8(seqA_chars, seqB_chars);
-                            match_mask = _mm256_cvtepi8_epi32(_mm256_castsi256_si128(match_mask));
+                    diag_score = _mm256_add_epi32( _mm256_loadu_si256((__m256i *)&prev2[d + diagDisp]), diag_score);
 
-                    __m256i diag_score = _mm256_or_si256( _mm256_and_si256(match_mask , match_score),  
-                                                          _mm256_andnot_si256(match_mask , mismatch_score) );
+            __m256i up_score   = _mm256_add_epi32( _mm256_loadu_si256((__m256i *)&prev1[d + 1 + disp]), gap_score);
 
-                            diag_score = _mm256_add_epi32( _mm256_loadu_si256((__m256i *)&prev2[d + diagDisp]), diag_score);
+            __m256i left_score = _mm256_add_epi32( _mm256_loadu_si256((__m256i *)&prev1[d + disp]), gap_score);
 
-                    __m256i up_score   = _mm256_add_epi32( _mm256_loadu_si256((__m256i *)&prev1[d + 1 + disp]), gap_score);
+            __m256i current_score = _mm256_max_epi32(diag_score, _mm256_max_epi32(up_score, left_score));
+                    current_score = _mm256_max_epi32(current_score, _mm256_setzero_si256());
 
-                    __m256i left_score = _mm256_add_epi32( _mm256_loadu_si256((__m256i *)&prev1[d + disp]), gap_score);
+            _mm256_storeu_si256((__m256i *)&curr[1 + d], current_score);
+            
+            for (int k = 0; k < remain; ++k) {
 
-                    __m256i current_score = _mm256_max_epi32(diag_score, _mm256_max_epi32(up_score, left_score));
-                            current_score = _mm256_max_epi32(current_score, _mm256_setzero_si256());
-
-                    _mm256_storeu_si256((__m256i *)&curr[1 + d], current_score);
-
-
-                    
-                    for (int k = 0; k < remain; ++k) {
-
-                        if (curr[d + k+1] > max_score) {
-                            max_score = curr[d + k+1];
-                            max_i = start_row + d + k;
-                            max_j = diag - start_row - d - k;
-                        }
-                    }
-        // }
-
-            // #pragma omp critical
-            // {
-            //     if (local_max > max_score){
-            //         max_score = local_max;
-            //         max_i = local_i;
-            //         max_j = local_j;
-            //     }
-            // }
+                if (curr[d + k+1] > max_score) {
+                    max_score = curr[d + k+1];
+                    max_i = start_row + d + k;
+                    max_j = diag - start_row - d - k;
+                }
+            }
         }
-
-        
         int *temp = prev2;
         prev2 = prev1;
         prev1 = curr;
         curr = temp;
-        fill(curr, curr + cols +1, 0); 
+        fill(curr, curr + cols + 1, 0); 
     }
 
-    // 正確釋放內存
+    
     _mm_free(prev2);
     _mm_free(prev1);
     _mm_free(curr);
@@ -272,7 +236,7 @@ int main(int argc, char **argv) {
     int max_score_serial = 0, max_i_serial = 0, max_j_serial = 0;
 
 
-    std::vector<std::vector<int>> serial_score(seqA.size() + 1, std::vector<int>(seqB.size() + 1, 0));
+    vector<vector<int>> serial_score(seqA.size() + 1, vector<int>(seqB.size() + 1, 0));
     auto start_serial = chrono::high_resolution_clock::now();
     //SmithWaterman_serial(seqA, seqB, max_score_serial, max_i_serial, max_j_serial);
 	SmithWaterman_serial(serial_score,seqA,seqB, max_score_serial, max_i_serial, max_j_serial);
