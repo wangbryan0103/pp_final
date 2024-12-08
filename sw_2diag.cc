@@ -9,14 +9,15 @@
 #include <chrono>
 #include <utility>
 
+#define MATCH_SCORE 5
+#define MISMATCH_SCORE -3
+#define GAP_SCORE -7
 #define BEFORE_MAX 0
-#define MAX_DIAG 1
-#define ATFER_MAX 2
+#define NEXT_MAX 1
+#define AFTER_MAX 2
+#define ALIGNMENT 32
+
 using namespace std;
-
-int gap_score = -7;
-int match_score = 5;
-
 
 
 void generate_random_seq(string &seqA, int length) {
@@ -55,115 +56,137 @@ bool ans_accuracy(int &score_s, int &score_w, int &i_s, int &i_w, int &j_s, int 
 
 
 
-void SmithWaterman_serial(vector<vector<int>>& score,const string seq1,const string seq2, int &max_score_serial, int &max_i_serial, int &max_j_serial){
-	int mismatch_score;
-    for(int i=1; i<score.size();i++){
-		for (int j=1;j<score[i].size();j++){
-			 if (seq1[i-1]==seq2[j-1]){
-				score[i][j]=score[i-1][j-1] + match_score;
-			}else {
-				if(seq1[i-1]=='A'&&seq2[j-1]=='G'||seq1[i-1]=='G'&&seq2[j-1]=='A'||seq1[i-1]=='C'&&seq2[j-1]=='T'||seq1[i-1]=='T'&&seq2[j-1]=='C') mismatch_score=-1;
-				else mismatch_score=-3;
-				score[i][j] = max({score[i][j-1]-gap_score,score[i-1][j]-gap_score,score[i-1][j-1]+mismatch_score,0});
-			}
-			if (score[i][j]>max_score_serial){
-				max_i_serial=i;
-				max_j_serial=j;
-				max_score_serial=score[i][j];	
-			}
-		}
-	}
-}
-
-
-int calculate_parallel(const string &seqA, const string &seqB, vector<int> &prev1, vector<int> &prev2,int i, int j, int d, int state){
-
-    int mismatch_score;
-    int curr;
-
-    if (seqA[i - 1] == seqB[j - 1])
-    {
-        int index = (state == BEFORE_MAX)? (d-1) : (state == MAX_DIAG)? d : (d+1);
-        curr = prev1[index] + match_score;
-    }else
-    {
-        if ((seqA[i - 1] == 'A' && seqB[j - 1] == 'G') || (seqA[i - 1] == 'G' && seqB[j - 1] == 'A') ||
-            (seqA[i - 1] == 'C' && seqB[j - 1] == 'T') || (seqA[i - 1] == 'T' && seqB[j - 1] == 'C')) {
-            mismatch_score = -1;
-        }else
-        {
-            mismatch_score = -3;
-        }
-        if(state == BEFORE_MAX){
-            curr = max(prev2[d-1] + gap_score, max(prev2[ d ] + gap_score, max(prev1[d-1] + mismatch_score, 0)));
-        }else if (state == MAX_DIAG){
-            curr = max(prev2[ d ] + gap_score, max(prev2[d-1] + gap_score, max(prev1[ d ] + mismatch_score, 0)));
-        }else{
-            curr = max(prev2[ d ] + gap_score, max(prev2[d+1] + gap_score, max(prev1[d+1] + mismatch_score, 0)));
-        }
-    }
-    return curr;
-}
-
-
-//assune len_A > len_B
-void SmithWaterman_parallel(const string &seqA, const string &seqB, int &max_score, int &max_i, int &max_j) {
+void SmithWaterman_serial_table(vector<vector<int>> &score, const string &seqA, const string &seqB,
+                                    int &maxScore_serial_row, int &maxi_serial_row, int &maxj_serial_row) {
     int rows = seqA.size() + 1;
     int cols = seqB.size() + 1;
 
-    vector<int> prev1(rows, 0);
-    vector<int> prev2(rows, 0);
-    vector<int> curr(rows, 0);
+    for (int i = 1; i < rows; ++i) {
+        for (int j = 1; j < cols; ++j) {
+            int diag_score = (seqA[i - 1] == seqB[j - 1]) ? MATCH_SCORE : MISMATCH_SCORE;
+                diag_score = score[i - 1][j - 1] + diag_score;
 
-
-
-    #pragma omp parallel
-    {        
-        int local_max_score = 0, local_i = 0, local_j = 0;
-
-        for (int diag = 2; diag < rows + cols - 1; ++diag)
-        {
-            int start_row = max(0, diag - (rows-1)); 
-            int end_row = min(diag, rows - 1);
-            int len_diag = end_row - start_row + 1;
-
-            int state = (start_row == 0)? 0 : (start_row == 1)? 1 : 2;
+            int up_score   = score[i - 1][j] + GAP_SCORE;
+            int left_score = score[i][j - 1] + GAP_SCORE;
             
-            #pragma omp for
-            for(int d = 0; d < len_diag; ++d)
-            {
+            score[i][j] = max({diag_score, up_score, left_score, 0});
+            
+            if (score[i][j] > maxScore_serial_row) {
+                maxScore_serial_row = score[i][j];
+                maxi_serial_row = i;
+                maxj_serial_row = j;
+            }
+        }
+    }
+}
+
+
+void SmithWaterman_serial_diag(const string &seqA, const string &seqB, int &max_score, int &max_i, int &max_j) {
+    int rows = seqA.size() + 1;
+    int cols = seqB.size() + 1;
+
+
+    
+    vector<int> prev1(cols, 0);
+    vector<int> prev2(cols, 0);
+    
+    for (int diag = 2; diag < rows + cols - 1; ++diag) {
+        vector<int> curr(cols, 0);    
+        int start_row = max(1, diag - (cols - 1));
+        int end_row   = min(rows - 1, diag - 1);
+        int len_diag  = end_row - start_row + 1;
+
+        for (int d = 0; d < len_diag; ++d) {
+            int i = start_row + d;
+            int j = diag - i;
+
+            if (i == 0 || j == 0) {
+                curr[j] = 0;
+            } else {
+                int diag_score = (seqA[i - 1] == seqB[j - 1]) ? MATCH_SCORE : MISMATCH_SCORE;
+                    diag_score = prev1[j - 1] + diag_score;
+                int up_score = prev2[j] + GAP_SCORE;
+                int left_score = prev2[j - 1] + GAP_SCORE;
+
+                curr[j] = max({diag_score, up_score, left_score, 0});
+            }
+
+            if (curr[j] > max_score) {
+                max_score = curr[j];
+                max_i = i;
+                max_j = j;
+            }
+        }
+
+        prev1.swap(prev2);
+        prev2.swap(curr);
+        fill(curr.begin(), curr.end(), 0);
+    }
+}
+
+
+
+
+//assune len_A > len_B
+void SmithWaterman_parallel_diag(const string &seqA, const string &seqB, int &max_score, int &max_i, int &max_j) {
+    int rows = seqA.size() + 1;
+    int cols = seqB.size() + 1;
+
+    vector<int> prev1(cols, 0);
+    vector<int> prev2(cols, 0);
+    
+    for (int diag = 2; diag < rows + cols - 1; ++diag) {
+        vector<int> curr(cols, 0);    
+        int start_row = max(1, diag - (cols - 1));
+        int end_row   = min(rows - 1, diag - 1);
+        int len_diag  = end_row - start_row + 1;
+
+        #pragma omp parallel
+        {
+            int local_max = 0;
+            int local_i, local_j;
+
+            #pragma omp for 
+            for (int d = 0; d < len_diag; ++d) {
                 int i = start_row + d;
                 int j = diag - i;
-                if(i == 0 || j == 0) curr[d] = 0;
-                else curr[d] = calculate_parallel(seqA, seqB, prev1, prev2, i, j, d, state);
 
-                if(curr[d] > local_max_score)
-                {
-                    local_max_score = curr[d];
+                if (i == 0 || j == 0) {
+                    curr[j] = 0;
+                } else {
+                    int diag_score = (seqA[i - 1] == seqB[j - 1]) ? MATCH_SCORE : MISMATCH_SCORE;
+                        diag_score = prev1[j - 1] + diag_score;
+                    int up_score   = prev2[j]     + GAP_SCORE;
+                    int left_score = prev2[j - 1] + GAP_SCORE;
+
+                    curr[j] = max({diag_score, up_score, left_score, 0});
+                }
+
+                if (curr[j] > local_max) {
+                    local_max = curr[j];
                     local_i = i;
                     local_j = j;
                 }
             }
-            #pragma omp barrier 
-            
-            #pragma omp single
+            #pragma omp barrier
+            #pragma omp critical
             {
-
-                prev1.swap(prev2);
-                prev2.swap(curr); 
-                fill(curr.begin(), curr.end(), 0);
+                if (local_max > max_score){
+                    max_score = local_max;
+                    max_i = local_i;
+                    max_j = local_j;
+                }
             }
+            
         }
 
-        #pragma omp critical
-        {
-            if (local_max_score > max_score){
-                max_score = local_max_score;
-                max_i = local_i;
-                max_j = local_j;
-            }
-        }
+        prev1.swap(prev2);
+        prev2.swap(curr);
+        fill(curr.begin(), curr.end(), 0);
+
+
     }
+
 }
 
 
@@ -176,56 +199,80 @@ int main(int argc, char **argv) {
     // ====================
     // generate sequence
     // ====================
-    string seqA;// = "GATCTCGT";
-    string seqB;// = "GATAGCAT";
+    string seqA; // = "GATCTCGT";
+    string seqB; // = "GATAGCAT";
 
 
-    int length = 20000;
+    int length = 10000;
     double similarity = 0.7;
     generate_random_seq(seqA, length);
     generate_similar_seq(seqA, seqB, length, similarity);
 
 
-    //  =====================================================
-    //  parallel version of wavefront with two anti-diagonals
-    //  =====================================================
-    int max_score_parallel = 0, max_i_parallel = 0, max_j_parallel = 0;
-
-    auto start_parallel = chrono::high_resolution_clock::now();
-    SmithWaterman_parallel(seqA, seqB, max_score_parallel, max_i_parallel, max_j_parallel);
-    auto end_parallel = chrono::high_resolution_clock::now();
-    auto duration_parallel = chrono::duration_cast<chrono::nanoseconds>(end_parallel - start_parallel);
 
 
     //  =====================================================
-    //  serial version for accuracy
+    //  serial diag
     //  =====================================================
-    int max_score_serial = 0, max_i_serial = 0, max_j_serial = 0;
+    int max_score_diag = 0, max_i_diag = 0, max_j_diag = 0;
+
+    auto start_serial_diag = chrono::high_resolution_clock::now();
+    SmithWaterman_serial_diag(seqA, seqB, max_score_diag, max_i_diag, max_j_diag);
+    auto end_serial_diag = chrono::high_resolution_clock::now();
+
+    auto duration_serial_diag = chrono::duration_cast<chrono::nanoseconds>(end_serial_diag - start_serial_diag);
 
 
-    std::vector<std::vector<int>> score(seqA.size() + 1, std::vector<int>(seqB.size() + 1, 0));
-    auto start_serial = chrono::high_resolution_clock::now();
-    //SmithWaterman_serial(seqA, seqB, max_score_serial, max_i_serial, max_j_serial);
-	SmithWaterman_serial(score,seqA,seqB, max_score_serial, max_i_serial, max_j_serial);
-    auto end_serial = chrono::high_resolution_clock::now();
-    auto duration_serial = chrono::duration_cast<chrono::nanoseconds>(end_serial - start_serial);
+    //  =====================================================
+    //  serial table
+    //  =====================================================
+    int maxScore_serial_row = 0, maxi_serial_row = 0, maxj_serial_row = 0;
+
+    vector<vector<int>> serial_score(seqA.size() + 1, vector<int>(seqB.size() + 1, 0));
+    auto start_serial_row = chrono::high_resolution_clock::now();
+	SmithWaterman_serial_table(serial_score,seqA,seqB, maxScore_serial_row, maxi_serial_row, maxj_serial_row);
+    auto end_serial_row = chrono::high_resolution_clock::now();
+
+    auto duration_serial_row = chrono::duration_cast<chrono::nanoseconds>(end_serial_row - start_serial_row);
+
+    //  =====================================================
+    //  SIMD version
+    //  =====================================================
+    int maxScore_parallel_diag = 0, maxi_parallel_daig = 0, maxj_parallel_diag = 0;
+    reverse(seqB.begin(), seqB.end());
+    auto start_parallel_diag = chrono::high_resolution_clock::now();
+    SmithWaterman_parallel_diag(seqA, seqB, maxScore_parallel_diag, maxi_parallel_daig, maxj_parallel_diag);
+    auto end_parallel_diag = chrono::high_resolution_clock::now();
+    auto duration_parallel_diag = chrono::duration_cast<chrono::nanoseconds>(end_parallel_diag - start_parallel_diag);
 
     
-    bool score_test = ans_accuracy(max_score_serial, max_score_parallel, max_i_serial, max_i_parallel, max_j_serial, max_j_parallel);
-   
+    // Accuracy test of diag
+    if (ans_accuracy(maxScore_serial_row, max_score_diag, maxi_serial_row, max_i_diag, maxj_serial_row, max_j_diag))
+        cout << "| diag score_test passed |" << endl;
+    else
+        cout << "| diag score_test failed |" << endl;
+    
+    // Accuracy test of SIMD
+    if (ans_accuracy(maxScore_serial_row, maxScore_parallel_diag, maxi_serial_row, maxi_parallel_daig, maxj_serial_row, maxj_parallel_diag))
+        cout << "| SIMD score_test passed |" << endl << endl;
+    else
+        cout << "| SIMD score_test failed |" << endl << endl;
 
-    if(score_test == true) cout << "| score_test passed |" << endl << endl;
-    else cout << "| score_test failed |" << endl << endl;
+    // Output max scores and execution times
+    cout << "Row_serial Score    : " << maxScore_serial_row << " at (" << maxi_serial_row << ", " << maxj_serial_row << ")" << endl;
+    cout << "Diag_serial Score   : " << max_score_diag << " at (" << max_i_diag << ", " << max_j_diag << ")" << endl;
+    cout << "Diag_parallel Score : " << maxScore_parallel_diag << " at (" << maxi_parallel_daig << ", " << maxj_parallel_diag << ")" << endl << endl;
 
-    cout << "Serial Score   : " << max_score_serial << " at (" << max_i_serial << ", " << max_j_serial << ")" << endl;
-    cout << "Parallel Score : " << max_score_parallel << " at (" << max_i_parallel << ", " << max_j_parallel << ")" << endl << endl;
+    cout << "==========   Row_serial  ==========" << endl;
+    cout << "time: " << duration_serial_row.count() << " ns" << endl;
+    cout << "==========  Diag_serial  ==========" << endl;
+    cout << "time: " << duration_serial_diag.count() << " ns" << endl;
+    cout << "========== Diag_parallel ==========" << endl;
+    cout << "time: " << duration_parallel_diag.count() << " ns" << endl << endl;
 
-    cout << "==========  serial  ==========" << endl;
-    cout << "time: " << duration_serial.count() << " ns" << endl;
-    cout << "========== parallel ==========" << endl;
-    cout << "time: " << duration_parallel.count() << " ns" << endl << endl;
-
-    cout << "speedup: " << (double)duration_serial.count() / (double)duration_parallel.count() << endl;
+    //cout << "Speedup of Diag_serial v.s. Row_serial: " << (double)duration_serial_row.count() / (double)duration_serial_diag.count() << endl;
+    cout << "Speedup of Diag_parallel v.s. Row_serial: " << (double)duration_serial_row.count() / (double)duration_parallel_diag.count() << endl;
+    cout << "Speedup of Diag_parallel v.s. Diag_serial : " << (double)duration_serial_diag.count() / (double)duration_parallel_diag.count() << endl;
 
     return 0;
 }
