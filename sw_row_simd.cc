@@ -4,7 +4,7 @@
 #include <iostream>
 #include <vector>
 #include <string>
-#include <algorithm> 
+#include <algorithm>
 #include <chrono>
 #include <utility>
 #include <immintrin.h>
@@ -69,10 +69,10 @@ void SmithWaterman_serial(vector<vector<int>> &score, const string &seqA, const 
             int up_score = score[i - 1][j] + GAP_SCORE;
             int left_score = score[i][j - 1] + GAP_SCORE;
 
-            
+
             score[i][j] = max({diag_score, up_score, left_score, 0});
 
-            
+
             if (score[i][j] > max_score_serial) {
                 max_score_serial = score[i][j];
                 max_i_serial = i;
@@ -130,53 +130,75 @@ void SmithWaterman_diag(const string &seqA, const string &seqB, int &max_score, 
 
 
 
-void SmithWaterman_SIMD(const string &seqA, const string &seqB, int &max_score, int &max_i, int &max_j, vector<vector<int>> score) {
-    
+void SmithWaterman_SIMD(const string &seqA, const string &seqB, int &max_score, int &max_i, int &max_j, vector<vector<int>> &score) {
+
     int rows = seqA.size() + 1;
     int cols = seqB.size() + 1;
 
-    char * seqA_buffer = static_cast<char *>(aligned_alloc(ALIGNMENT, rows + 7));
-    char * seqB_buffer = static_cast<char *>(aligned_alloc(ALIGNMENT, cols + 7));
+    char * seqA_buffer = static_cast<char *>(aligned_alloc(ALIGNMENT, rows));
+    char * seqB_buffer = static_cast<char *>(aligned_alloc(ALIGNMENT, cols));
 
-    std::memcpy(seqA_buffer + 7, seqA.c_str(), rows);
+    std::memcpy(seqA_buffer, seqA.c_str(), rows);
     std::memcpy(seqB_buffer, seqB.c_str(), cols);
-
+    __m256i test    = _mm256_set1_epi32(1);
+    //__m256i test1    = _mm256_set1_epi32(-1);
+    __m256i test2    = _mm256_set1_epi32(0);
     __m256i match_score    = _mm256_set1_epi32(MATCH_SCORE);
     __m256i mismatch_score = _mm256_set1_epi32(MISMATCH_SCORE);
     __m256i gap_score      = _mm256_set1_epi32(GAP_SCORE);
 
     for (int i = 1; i < rows; ++i) {
         for (int j = 1; j < cols; j += 8) {
-            int remain = min(8, cols - j);
 
-            __m256i seqA_chars = _mm256_loadu_si256((__m256i *)&seqA_buffer[indexA]);
-            __m256i seqB_chars = _mm256_loadu_si256((__m256i *)&seqB_buffer[indexB]);
+            __m256i seqA_chars = _mm256_set1_epi32((int)seqA_buffer[i-1]);
+            __m256i seqB_chars = _mm256_set_epi32(
+            (int)seqB_buffer[j + 6],
+            (int)seqB_buffer[j + 5],
+            (int)seqB_buffer[j + 4],
+            (int)seqB_buffer[j + 3],
+            (int)seqB_buffer[j + 2],
+            (int)seqB_buffer[j + 1],
+            (int)seqB_buffer[j],
+            (int)seqB_buffer[j -1]);
 
             __m256i match_mask = _mm256_cmpeq_epi8(seqA_chars, seqB_chars);
-                    match_mask = _mm256_cvtepi8_epi32(_mm256_castsi256_si128(match_mask));
+                    match_mask = _mm256_and_si256(test, match_mask);
+                    match_mask = _mm256_xor_si256(match_mask, _mm256_set1_epi8(0xFF));
+                    match_mask = _mm256_add_epi32(match_mask, test); 
 
-            __m256i diag_score = _mm256_or_si256( _mm256_and_si256(match_mask ,match_score),  
-                                                  _mm256_andnot_si256(match_mask , mismatch_score) );
-            
-                    diag_score = _mm256_add_epi32( _mm256_loadu_si256((__m256i *)&score[i-1][j-1]), diag_score);
-            
+            __m256i diag_score = _mm256_blendv_epi8(mismatch_score, match_score, match_mask);
+           
+            diag_score = _mm256_add_epi32( _mm256_loadu_si256((__m256i *)&score[i-1][j-1]), diag_score);
+
             __m256i up_score   = _mm256_add_epi32( _mm256_loadu_si256((__m256i *)&score[i-1][ j ]), gap_score);
+            
             __m256i temp_score = _mm256_max_epi32( up_score, diag_score);
-            _mm256_storeu_si256((__m256i *)&score[i][j], temp_score);
+
+            temp_score = _mm256_max_epi32(test2 , temp_score);
+
+            __m256i left_vec = _mm256_slli_si256(temp_score, 4);
+            
+            __m256i left_minus_penalty = _mm256_add_epi32(left_vec, gap_score);
+
+            __m256i result_vec = _mm256_max_epi32(temp_score, left_minus_penalty);
+
+            _mm256_storeu_si256((__m256i*)&score[i][j], result_vec);  
+           
         }
+        for (int k = 1; k < cols; k += 8) {
+                __m256i resulttmp = _mm256_loadu_si256((__m256i*)&score[i][k]);
+                __m256i left_vec = _mm256_loadu_si256((__m256i*)&score[i][k-1]);
 
-        for(int j = 1; j < cols; ++j){
-            __m256i curr_score = _mm256_max_epi32( _mm256_loadu_si256((__m256i *)&score[i][ j ]),
-                                                   _mm256_loadu_si256((__m256i *)&score[i][j-1]))
-
-
-            // int left_score = score[i][j - 1] + GAP_SCORE;
-            // score[i][j] = max(score[i][j], left_score);
-
-            if (score[i][j] > max_score) {
+                __m256i left_minus_penalty = _mm256_add_epi32(left_vec, gap_score);
+                __m256i result_vec = _mm256_max_epi32(resulttmp, left_minus_penalty);
+                _mm256_storeu_si256((__m256i*)&score[i][k], result_vec);
+        }
+        for(int j=1;j<cols;j++){
+             if (score[i][j] > max_score) {
                 max_score = score[i][j];
                 max_i = i;
                 max_j = j;
+            
             }
         }
     }
@@ -190,11 +212,11 @@ int main(int argc, char **argv) {
     // ====================
     // generate sequence
     // ====================
-    string seqA; // = "GATCTCGT";
-    string seqB; // = "GATAGCAT";
+    /*string seqA  = "GATCTCGTGAGATCAC";
+    string seqB  = "GATAGCATCCAGTCAA";*/
+    string seqA,seqB;
 
-
-    int length = 10000;
+    int length = 30000;
     double similarity = 0.7;
     generate_random_seq(seqA, length);
     generate_similar_seq(seqA, seqB, length, similarity);
@@ -219,10 +241,9 @@ int main(int argc, char **argv) {
     vector<vector<int>> score_serial(seqA.size() + 1, vector<int>(seqB.size() + 1, 0));
     auto start_serial = chrono::high_resolution_clock::now();
     //SmithWaterman_serial(seqA, seqB, max_score_serial, max_i_serial, max_j_serial);
-	SmithWaterman_serial(score_serial,seqA,seqB, max_score_serial, max_i_serial, max_j_serial);
+    SmithWaterman_serial(score_serial,seqA,seqB, max_score_serial, max_i_serial, max_j_serial);
     auto end_serial = chrono::high_resolution_clock::now();
     auto duration_serial = chrono::duration_cast<chrono::nanoseconds>(end_serial - start_serial);
-
     //  =====================================================
     //  SIMD version
     //  =====================================================
@@ -232,14 +253,24 @@ int main(int argc, char **argv) {
     SmithWaterman_SIMD(seqA, seqB, max_score_simd, max_i_simd, max_j_simd, score_SIMD);
     auto end_simd = chrono::high_resolution_clock::now();
     auto duration_simd = chrono::duration_cast<chrono::nanoseconds>(end_simd - start_simd);
+    /*cout<<"  ";
+    for(int k=0;k<seqB.length();k++)
+        cout<<seqB[k]<<"  ";
+	    cout<<endl;
+        for(int i=1;i<score_SIMD.size();i++){
+		    cout<<seqA[i-1]<<"  ";
+                for (int j=1;j<score_SIMD[i].size();j++){
+			        cout<<score_SIMD[i][j]<<"  ";
+		}
+		cout<<endl;
+	}*/
 
-    
     // Accuracy test of diag
     if (ans_accuracy(max_score_serial, max_score_diag, max_i_serial, max_i_diag, max_j_serial, max_j_diag))
         cout << "| diag score_test passed |" << endl;
     else
         cout << "| diag score_test failed |" << endl;
-    
+
     // Accuracy test of SIMD
     if (ans_accuracy(max_score_serial, max_score_simd, max_i_serial, max_i_simd, max_j_serial, max_j_simd))
         cout << "| SIMD score_test passed |" << endl << endl;
@@ -264,6 +295,4 @@ int main(int argc, char **argv) {
 
     return 0;
 }
-/*
-make METHOD=m7; srun -c 1 ./sw
-*/
+
