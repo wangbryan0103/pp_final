@@ -146,8 +146,8 @@ void SmithWaterman_SIMD(const string &seqA, const string &seqB, int &max_score, 
     __m256i match_score    = _mm256_set1_epi32(MATCH_SCORE);
     __m256i mismatch_score = _mm256_set1_epi32(MISMATCH_SCORE);
     __m256i gap_score      = _mm256_set1_epi32(GAP_SCORE);
-
     for (int i = 1; i < rows; ++i) {
+        __m256i last = test2;
         for (int j = 1; j < cols; j += 8) {
 
             __m256i seqA_chars = _mm256_set1_epi32((int)seqA_buffer[i-1]);
@@ -172,27 +172,53 @@ void SmithWaterman_SIMD(const string &seqA, const string &seqB, int &max_score, 
 
             __m256i up_score   = _mm256_add_epi32( _mm256_loadu_si256((__m256i *)&score[i-1][ j ]), gap_score);
             
-            __m256i temp_score = _mm256_max_epi32( up_score, diag_score);
-
-            temp_score = _mm256_max_epi32(test2 , temp_score);
-
-            __m256i left_vec = _mm256_slli_si256(temp_score, 4);
+            __m256i temp_score = _mm256_max_epi32(up_score, diag_score);
             
-            __m256i left_minus_penalty = _mm256_add_epi32(left_vec, gap_score);
+            temp_score = _mm256_max_epi32(test2 , temp_score);
+            
+            __m256i left_vec = _mm256_slli_si256(temp_score, 4);
+            __m256i permuted = _mm256_permute2x128_si256(temp_score, temp_score, 10);
+            __m256i tmp = _mm256_srli_si256(permuted, 12);
+            __m256i test = _mm256_add_epi32(left_vec,tmp);
+            
+            __m256i left_minus_penalty = _mm256_add_epi32(test, gap_score);
 
             __m256i result_vec = _mm256_max_epi32(temp_score, left_minus_penalty);
 
-            _mm256_storeu_si256((__m256i*)&score[i][j], result_vec);  
-           
+            __m256i lefttmp =_mm256_slli_si256(result_vec,4);
+            __m256i permuted_tmp = _mm256_permute2x128_si256(result_vec, result_vec, 10);
+            __m256i tmp_tmp = _mm256_srli_si256(permuted_tmp, 12);
+            __m256i test_tmp = _mm256_add_epi32(lefttmp,tmp_tmp);
+            
+            test_tmp = _mm256_add_epi32(test_tmp,last);
+            /*alignas(32) int32_t buffer[8]; 
+            _mm256_storeu_si256((__m256i*)buffer, test_tmp);
+
+            std::cout << "Elements: ";
+            for (int i = 0; i < 8; ++i) {
+                std::cout << buffer[i] << " ";
+            }
+            std::cout << std::endl;*/
+            __m256i left_minus_penalty_tmp = _mm256_add_epi32(test_tmp, gap_score);
+            
+            
+            __m256i result_vec_final = _mm256_max_epi32(result_vec, left_minus_penalty_tmp);
+            _mm256_storeu_si256((__m256i*)&score[i][j], result_vec_final);
+            __m256i idx = _mm256_set_epi32(-1, 0, 0, 0, 0, 0, 0, 0);
+            last = test2;
+            last = _mm256_and_si256(result_vec_final, idx);
+
+            last = _mm256_permute2x128_si256(last, last, 1);
+            last = _mm256_srli_si256(last, 12);
         }
-        for (int k = 1; k < cols; k += 8) {
+        /*for (int k = 1; k < cols; k += 8) {
                 __m256i resulttmp = _mm256_loadu_si256((__m256i*)&score[i][k]);
                 __m256i left_vec = _mm256_loadu_si256((__m256i*)&score[i][k-1]);
 
                 __m256i left_minus_penalty = _mm256_add_epi32(left_vec, gap_score);
                 __m256i result_vec = _mm256_max_epi32(resulttmp, left_minus_penalty);
                 _mm256_storeu_si256((__m256i*)&score[i][k], result_vec);
-        }
+        }*/
         for(int j=1;j<cols;j++){
              if (score[i][j] > max_score) {
                 max_score = score[i][j];
@@ -212,11 +238,11 @@ int main(int argc, char **argv) {
     // ====================
     // generate sequence
     // ====================
-    /*string seqA  = "GATCTCGTGAGATCAC";
-    string seqB  = "GATAGCATCCAGTCAA";*/
+    //string seqA  = "GATCTCGTGAGATCAC";
+    //string seqB  = "GATAGCATCCAGTCAA";
     string seqA,seqB;
 
-    int length = 30000;
+    int length = 10000;
     double similarity = 0.7;
     generate_random_seq(seqA, length);
     generate_similar_seq(seqA, seqB, length, similarity);
@@ -249,6 +275,7 @@ int main(int argc, char **argv) {
     //  =====================================================
     vector<vector<int>> score_SIMD(seqA.size() + 1, vector<int>(seqB.size() + 1, 0));
     int max_score_simd = 0, max_i_simd = 0, max_j_simd = 0;
+    //reverse(seqB.begin(), seqB.end());
     auto start_simd = chrono::high_resolution_clock::now();
     SmithWaterman_SIMD(seqA, seqB, max_score_simd, max_i_simd, max_j_simd, score_SIMD);
     auto end_simd = chrono::high_resolution_clock::now();
