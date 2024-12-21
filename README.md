@@ -7,7 +7,7 @@
 ### Row based pthread
 ```
 make clean
-make METHOD=sw_row
+make METHOD=sw_row_pthread
 ./sw
 ```
 ### Row based SIMD
