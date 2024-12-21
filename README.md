@@ -22,7 +22,7 @@ make clean
 make METHOD=diad_openmp
 ./sw
 ```
-### Dig based openMP
+### Dig based SIMD
 ```
 make clean
 make METHOD=diad_simd
