@@ -16,15 +16,15 @@ make clean
 make METHOD=sw_row_simd
 ./sw
 ```
-### Dig based openMP
+### Diag based openMP
 ```
 make clean
-make METHOD=diad_openmp
+make METHOD=sw_diag_openmp
 ./sw
 ```
-### Dig based SIMD
+### Diag based SIMD
 ```
 make clean
-make METHOD=diad_simd
+make METHOD=sw_diag_simd
 ./sw
 ```
