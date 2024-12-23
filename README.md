@@ -9,7 +9,7 @@ testfile 僅為寫code時的測試版可以忽略
 ```
 make clean
 make METHOD=sw_row_pthread
-./sw
+./sw 2
 ```
 ### Row based SIMD
 ```

@@ -239,7 +239,7 @@ int main(int argc, char **argv) {
     //  SIMD version
     //  =====================================================
     int maxScore_parallel_diag = 0, maxi_parallel_daig = 0, maxj_parallel_diag = 0;
-    reverse(seqB.begin(), seqB.end());
+    //reverse(seqB.begin(), seqB.end());
     auto start_parallel_diag = chrono::high_resolution_clock::now();
     SmithWaterman_parallel_diag(seqA, seqB, maxScore_parallel_diag, maxi_parallel_daig, maxj_parallel_diag);
     auto end_parallel_diag = chrono::high_resolution_clock::now();

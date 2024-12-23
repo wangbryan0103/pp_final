@@ -71,7 +71,7 @@ void SmithWaterman_serial(const string &seqA, const string &seqB, vector<vector<
     auto minThread = chrono::duration_cast<chrono::nanoseconds>(end_ - start_);
     cout<<minThread.count()<<endl;
 }
-
+pthread_mutex_t mut1 = PTHREAD_MUTEX_INITIALIZER
 pthread_mutex_t mut = PTHREAD_MUTEX_INITIALIZER;
 pthread_cond_t cond = PTHREAD_COND_INITIALIZER;
 int current_stage = 0; 
