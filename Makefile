@@ -1,12 +1,12 @@
-METHOD ?= sw_rowmajor
+METHOD ?= sw_row_pthread
 TARGET = sw
 
 CX = g++
 CXXFLAGS = -std=c++11 -O3 -Wall -fopenmp -mavx2 -std=c++11
 
 
-ifeq ($(METHOD), sw_rowmajor)
-    SRCS = sw_rowmajor.cc
+ifeq ($(METHOD), sw_row_pthread)
+    SRCS = sw_row_pthread.cc
 else ifeq ($(METHOD), sw_alldiag)
     SRCS = sw_alldiag.cc
 else ifeq ($(METHOD), sw_row_simd)
